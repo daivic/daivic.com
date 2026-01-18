@@ -8,3 +8,7 @@ export const patternOptions: PatternConfig[] = [
   { name: "Pink Strip", path: "/patterns/pat-strip-pink.png" },
   { name: "Tan Strip", path: "/patterns/pat-strip-tan.png" },
 ];
+
+
+
+

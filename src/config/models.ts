@@ -44,3 +44,7 @@ export const models: ModelConfig[] = [
     modelRotation: [-0.6, -0.6, 0],
   },
 ];
+
+
+
+

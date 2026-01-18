@@ -1,31 +1,32 @@
 import { useEffect, useState } from "react";
 import * as THREE from "three";
-import { GLTFLoader } from "three-stdlib";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 /**
- * Custom hook to load and manage GLTF models with optional color texture
+ * Load a GLTF model and (optionally) apply a color texture to MeshStandardMaterial.
  */
 export function useModelLoader(
   modelPath?: string,
   applyColorTexture?: boolean
 ) {
   const [model, setModel] = useState<THREE.Group | null>(null);
-  const [colorTexture, setColorTexture] = useState<THREE.Texture | null>(null);
 
   // Load GLTF model
   useEffect(() => {
     if (!modelPath) return;
 
     const loader = new GLTFLoader();
+    let cancelled = false;
     loader.load(modelPath, (gltf) => {
+      if (cancelled) return;
       const loadedModel = gltf.scene;
 
       // Center and scale the model
       const box = new THREE.Box3().setFromObject(loadedModel);
       const center = box.getCenter(new THREE.Vector3());
       const modelSize = box.getSize(new THREE.Vector3());
-      const maxSize = Math.min(modelSize.x, modelSize.y, modelSize.z);
-      const scale = 2 / maxSize;
+      const minSize = Math.min(modelSize.x, modelSize.y, modelSize.z);
+      const scale = 2 / minSize;
 
       loadedModel.scale.setScalar(scale);
       loadedModel.position.sub(center.multiplyScalar(scale));
@@ -34,28 +35,19 @@ export function useModelLoader(
     });
 
     return () => {
-      // Cleanup if needed
+      cancelled = true;
       setModel(null);
     };
   }, [modelPath]);
 
-  // Load color texture
+  // Optionally apply a color texture
   useEffect(() => {
-    if (applyColorTexture) {
-      const loader = new THREE.TextureLoader();
-      const rgbTexturePath = "/textures/rgb-tex.jpg";
-      loader.load(rgbTexturePath, (loadedTexture) => {
-        loadedTexture.flipY = false;
-        setColorTexture(loadedTexture);
-      });
-    } else {
-      setColorTexture(null);
-    }
-  }, [applyColorTexture]);
+    if (!model || !applyColorTexture) return;
 
-  // Apply color texture to model
-  useEffect(() => {
-    if (!model || !colorTexture) return;
+    const loader = new THREE.TextureLoader();
+    const rgbTexturePath = "/textures/rgb-tex.jpg";
+    loader.load(rgbTexturePath, (loadedTexture) => {
+      loadedTexture.flipY = false;
 
     model.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material) {
@@ -65,13 +57,14 @@ export function useModelLoader(
 
         materials.forEach((mat) => {
           if (mat instanceof THREE.MeshStandardMaterial) {
-            mat.map = colorTexture;
+            mat.map = loadedTexture;
             mat.needsUpdate = true;
           }
         });
       }
     });
-  }, [model, colorTexture]);
+    });
+  }, [model, applyColorTexture]);
 
-  return { model, colorTexture };
+  return { model };
 }

@@ -1,8 +1,7 @@
-import { useRef, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import { useFBO } from "@react-three/drei";
 import * as THREE from "three";
-import type { AsciiModelSceneProps } from "../../types";
 import { OffscreenRenderer } from "./OffscreenRenderer";
 import { ShaderPlane } from "./ShaderPlane";
 import { useModelLoader } from "../../hooks/useModelLoader";
@@ -16,6 +15,15 @@ import {
   ANIMATION_AMPLITUDE,
 } from "../../config/constants";
 
+type AsciiModelSceneProps = {
+  modelPath?: string;
+  applyColorTexture?: boolean;
+  patternTexture?: string;
+  animate?: boolean;
+};
+
+const DEFAULT_MOUSE_SENSITIVITY = 0.3;
+
 /**
  * Main ASCII model scene component
  * Handles model loading, rendering, and animation/mouse rotation
@@ -23,19 +31,24 @@ import {
 export function AsciiModelScene({
   modelPath,
   applyColorTexture = false,
-  patternTexture = "/models/pat-cards.png",
+  patternTexture = "/patterns/pat-strip-green.png",
   animate = false,
-  mouseRotationX = 0,
-  mouseRotationY = 0,
 }: AsciiModelSceneProps) {
-  const { size } = useThree();
+  const { size, gl } = useThree();
   const modelGroupRef = useRef<THREE.Group>(null);
+  const mouseRotationTarget = useRef({ x: 0, y: 0 });
+  const mouseRotationCurrent = useRef({ x: 0, y: 0 });
 
   const [pattern, setPattern] = useState<THREE.Texture | null>(null);
-  const [renderResult, setRenderResult] = useState<THREE.Texture | null>(null);
 
   // Use custom hook for model loading
   const { model } = useModelLoader(modelPath, applyColorTexture);
+
+  // Create framebuffer object with reduced resolution for performance
+  const fboScale = 0.5;
+  const fbo = useFBO(size.width * fboScale, size.height * fboScale, {
+    type: THREE.HalfFloatType,
+  });
 
   // Create orthographic camera
   const camera = useMemo(() => {
@@ -67,23 +80,13 @@ export function AsciiModelScene({
   const customUniforms = useMemo(() => {
     if (!pattern) return undefined;
 
-    // Calculate dynamic cell size to maintain consistent number of cells
-    // Aim for approximately 80 cells horizontally on a standard screen
     const targetCellsHorizontal = 150;
-    const dynamicCellSize = size.width / targetCellsHorizontal;
-
     return {
-      uMap: new THREE.Uniform(renderResult),
+      uMap: new THREE.Uniform(fbo.texture),
       uPattern: new THREE.Uniform(pattern),
-      uCellSize: new THREE.Uniform(dynamicCellSize),
+      uCellSize: new THREE.Uniform(size.width / targetCellsHorizontal),
     };
-  }, [renderResult, pattern, size.width]);
-
-  // Create framebuffer object with reduced resolution for performance
-  const fboScale = 0.5; // Reduce resolution for better performance in grid
-  const fbo = useFBO(size.width * fboScale, size.height * fboScale, {
-    type: THREE.HalfFloatType,
-  });
+  }, [pattern, fbo.texture, size.width]);
 
   // Load pattern texture
   useEffect(() => {
@@ -94,7 +97,41 @@ export function AsciiModelScene({
     patternTex.minFilter = THREE.NearestFilter;
     patternTex.magFilter = THREE.NearestFilter;
     setPattern(patternTex);
+
+    return () => {
+      patternTex.dispose();
+    };
   }, [patternTexture]);
+
+  // Track mouse movement over the canvas (no React re-renders)
+  useEffect(() => {
+    const canvas = gl.domElement;
+    if (!canvas) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const normalizedX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      const normalizedY = ((event.clientY - rect.top) / rect.height) * 2 - 1;
+
+      const maxRotation = Math.PI / 4; // 45 degrees
+      mouseRotationTarget.current = {
+        x: -normalizedY * maxRotation * DEFAULT_MOUSE_SENSITIVITY,
+        y: normalizedX * maxRotation * DEFAULT_MOUSE_SENSITIVITY,
+      };
+    };
+
+    const handleMouseLeave = () => {
+      mouseRotationTarget.current = { x: 0, y: 0 };
+    };
+
+    canvas.addEventListener("mousemove", handleMouseMove);
+    canvas.addEventListener("mouseleave", handleMouseLeave);
+
+    return () => {
+      canvas.removeEventListener("mousemove", handleMouseMove);
+      canvas.removeEventListener("mouseleave", handleMouseLeave);
+    };
+  }, [gl]);
 
   // Animation and mouse rotation
   useFrame((state) => {
@@ -111,9 +148,22 @@ export function AsciiModelScene({
       modelGroupRef.current.rotation.z =
         Math.sin(time * ANIMATION_SPEED.TILT) * ANIMATION_AMPLITUDE.TILT;
     }
-    // Apply mouse rotation when not animating
-    modelGroupRef.current.rotation.x = -mouseRotationX;
-    modelGroupRef.current.rotation.y = mouseRotationY;
+
+    const lerpFactor = 0.1;
+    mouseRotationCurrent.current.x = THREE.MathUtils.lerp(
+      mouseRotationCurrent.current.x,
+      mouseRotationTarget.current.x,
+      lerpFactor
+    );
+    mouseRotationCurrent.current.y = THREE.MathUtils.lerp(
+      mouseRotationCurrent.current.y,
+      mouseRotationTarget.current.y,
+      lerpFactor
+    );
+
+    // Mouse rotation always controls X/Y.
+    modelGroupRef.current.rotation.x = -mouseRotationCurrent.current.x;
+    modelGroupRef.current.rotation.y = mouseRotationCurrent.current.y;
   });
 
   return (
@@ -124,7 +174,6 @@ export function AsciiModelScene({
       />
       <OffscreenRenderer
         fbo={fbo}
-        onTextureUpdate={setRenderResult}
         camera={camera}
       >
         <ambientLight intensity={100} />

@@ -1,7 +1,13 @@
 import { useMemo } from "react";
 import { useThree, useFrame, createPortal } from "@react-three/fiber";
 import * as THREE from "three";
-import type { OffscreenRendererProps } from "../../types";
+import type { ReactNode } from "react";
+
+type OffscreenRendererProps = {
+  fbo: THREE.WebGLRenderTarget;
+  camera: THREE.Camera;
+  children: ReactNode;
+};
 
 /**
  * Offscreen renderer for framebuffer operations
@@ -9,7 +15,6 @@ import type { OffscreenRendererProps } from "../../types";
  */
 export function OffscreenRenderer({
   fbo,
-  onTextureUpdate,
   camera,
   children,
 }: OffscreenRendererProps) {
@@ -22,8 +27,7 @@ export function OffscreenRenderer({
     gl.clear();
     gl.render(offscreenScene, camera);
     gl.setRenderTarget(currentRenderTarget);
-    onTextureUpdate(fbo.texture);
   });
 
-  return <>{createPortal(children, offscreenScene)}</>;
+  return createPortal(children, offscreenScene);
 }

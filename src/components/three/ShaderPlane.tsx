@@ -1,8 +1,12 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import type { ShaderPlaneProps } from "../../types";
 import { vertexShader } from "../../shaders/vertex.glsl";
+
+type ShaderPlaneProps = {
+  fragmentShader: string;
+  customUniforms?: Record<string, THREE.Uniform>;
+};
 
 /**
  * Shader plane that displays the processed texture
@@ -18,19 +22,19 @@ export function ShaderPlane({
       vertexShader,
       fragmentShader,
       uniforms: {
-        ...customUniforms,
-        u_imageResolution: new THREE.Uniform(
-          new THREE.Vector2(size.width, size.height)
-        ),
+        ...(customUniforms ?? {}),
+        u_imageResolution: new THREE.Uniform(new THREE.Vector2(1, 1)),
       },
     });
-  }, [fragmentShader, customUniforms, size]);
+  }, [fragmentShader, customUniforms]);
 
   useFrame(() => {
     if (material && material.uniforms.u_imageResolution) {
       material.uniforms.u_imageResolution.value.set(size.width, size.height);
     }
   });
+
+  useEffect(() => () => material.dispose(), [material]);
 
   return (
     <mesh>
